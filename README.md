@@ -14,6 +14,7 @@
 
 <p align="center">
   <a href="#-quick-download--run-the-easiest-way"><img src="https://img.shields.io/badge/Download-AxiomDesktop.exe-00FF66?style=for-the-badge&logo=windows&logoColor=black" alt="Download Windows Exe"></a>
+  <a href="#-quick-download--run-the-easiest-way"><img src="https://img.shields.io/badge/Download-AxiomTablet.apk-FF0055?style=for-the-badge&logo=android&logoColor=white" alt="Download Android APK"></a>
   <img src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-00E5FF?style=for-the-badge" alt="Platform">
   <img src="https://img.shields.io/badge/Client-Android%20Tablet-FF0055?style=for-the-badge" alt="Client">
   <img src="https://img.shields.io/badge/License-Apache%202.0-yellow?style=for-the-badge" alt="License">
@@ -77,7 +78,7 @@ Why type on glass in silence like a caveman? Axiom ships with a high-fidelity so
 No need to install Python, Dart, Android Studio, or 400 GB of C++ build tools.
 
 ### 💻 Step 1: Run the PC Companion (Windows)
-1. Download the standalone executable directly from the repository:
+1. Download the standalone executable directly:
    👉 **[`dist/AxiomDesktop.exe`](dist/AxiomDesktop.exe)**
 2. Double click **`AxiomDesktop.exe`**.
 3. A sleek black terminal window will pop up showing your **Local IP** and a secure **4-digit PIN** (e.g., `PIN: 1337`).
@@ -87,12 +88,15 @@ No need to install Python, Dart, Android Studio, or 400 GB of C++ build tools.
 ---
 
 ### 📱 Step 2: Run the Tablet App (Android)
-1. Grab the APK from the [Releases](https://github.com/APEXPRE123207/Axiom/releases) tab (or compile using `flutter build apk`).
-2. Open Axiom on your tablet.
-3. Tap **CONNECT** at the top:
+1. Download the pre-built APK directly:
+   👉 **[`dist/AxiomTablet.apk`](dist/AxiomTablet.apk)**
+   *(Or grab it from the [GitHub Releases](https://github.com/APEXPRE123207/Axiom/releases) tab)*
+2. Transfer or download it on your Android tablet and tap to install (allow "Install unknown apps" if prompted).
+3. Open Axiom on your tablet.
+4. Tap **CONNECT** at the top:
    - If your tablet is on the same Wi-Fi, it will **auto-discover** your PC!
    - Or type in the PC IP and 4-digit PIN shown on your desktop screen.
-4. **Done!** You are now controlling your PC from your tablet.
+5. **Done!** You are now controlling your PC from your tablet.
 
 ---
 

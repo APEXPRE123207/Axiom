@@ -27,6 +27,7 @@ class _HidableSideBannersState extends State<HidableSideBanners>
   // -1 = Left open, 1 = Right open, 0 = Closed
   int _activeSide = 0;
   static const double _bannerWidth = 250.0;
+  double _dragAccumulator = 0.0;
 
   @override
   void initState() {
@@ -46,16 +47,6 @@ class _HidableSideBannersState extends State<HidableSideBanners>
   void dispose() {
     _animCtrl.dispose();
     super.dispose();
-  }
-
-  void _openLeft() {
-    setState(() => _activeSide = -1);
-    _animCtrl.forward();
-  }
-
-  void _openRight() {
-    setState(() => _activeSide = 1);
-    _animCtrl.forward();
   }
 
   void _close() {
@@ -174,7 +165,7 @@ class _HidableSideBannersState extends State<HidableSideBanners>
               },
             ),
 
-            // 5. FULL-HEIGHT LEFT GLOWING EDGE & SWIPE TRIGGER
+            // 5. FULL-HEIGHT LEFT GLOWING EDGE & INTENTIONAL SWIPE TRIGGER
             AnimatedBuilder(
               animation: _slideAnimation,
               builder: (context, _) {
@@ -187,23 +178,33 @@ class _HidableSideBannersState extends State<HidableSideBanners>
                   top: 0,
                   bottom: 0,
                   left: leftOffset,
-                  width: 32.0,
+                  // Keep hit width ultra-slim (14px) so it stays purely on the bezel and never overlaps keys
+                  width: 14.0,
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
-                    onTap: () {
-                      if (isLeftOpen && _animCtrl.value > 0.5) {
-                        _close();
-                      } else {
-                        _openLeft();
-                      }
+                    // DO NOT open on tap! Taps must never open the drawer accidentally while typing
+                    onHorizontalDragStart: (_) {
+                      _dragAccumulator = 0.0;
                     },
                     onHorizontalDragUpdate: (details) {
-                      _activeSide = -1;
                       final delta = details.primaryDelta ?? 0;
-                      _animCtrl.value += delta / _bannerWidth;
+                      if (!isLeftOpen) {
+                        // Only activate on deliberate INWARD (positive) drag
+                        if (delta > 0) {
+                          _dragAccumulator += delta;
+                          if (_dragAccumulator > 28.0) {
+                            _activeSide = -1;
+                            _animCtrl.value = (_dragAccumulator - 28.0) / _bannerWidth;
+                          }
+                        }
+                      } else {
+                        // When open, dragging left closes it
+                        _animCtrl.value += delta / _bannerWidth;
+                      }
                     },
                     onHorizontalDragEnd: (details) {
-                      if (_animCtrl.value > 0.30 || (details.primaryVelocity ?? 0) > 150) {
+                      final velocity = details.primaryVelocity ?? 0;
+                      if (_animCtrl.value > 0.50 || velocity > 600) {
                         _animCtrl.forward();
                       } else {
                         _close();
@@ -252,7 +253,7 @@ class _HidableSideBannersState extends State<HidableSideBanners>
               },
             ),
 
-            // 6. FULL-HEIGHT RIGHT GLOWING EDGE & SWIPE TRIGGER
+            // 6. FULL-HEIGHT RIGHT GLOWING EDGE & INTENTIONAL SWIPE TRIGGER
             AnimatedBuilder(
               animation: _slideAnimation,
               builder: (context, _) {
@@ -265,23 +266,33 @@ class _HidableSideBannersState extends State<HidableSideBanners>
                   top: 0,
                   bottom: 0,
                   right: rightOffset,
-                  width: 32.0,
+                  // Keep hit width ultra-slim (14px) so it stays purely on the bezel and never overlaps keys
+                  width: 14.0,
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
-                    onTap: () {
-                      if (isRightOpen && _animCtrl.value > 0.5) {
-                        _close();
-                      } else {
-                        _openRight();
-                      }
+                    // DO NOT open on tap! Taps must never open the drawer accidentally while typing
+                    onHorizontalDragStart: (_) {
+                      _dragAccumulator = 0.0;
                     },
                     onHorizontalDragUpdate: (details) {
-                      _activeSide = 1;
                       final delta = details.primaryDelta ?? 0;
-                      _animCtrl.value -= delta / _bannerWidth;
+                      if (!isRightOpen) {
+                        // Only activate on deliberate INWARD (negative) drag
+                        if (delta < 0) {
+                          _dragAccumulator += -delta;
+                          if (_dragAccumulator > 28.0) {
+                            _activeSide = 1;
+                            _animCtrl.value = (_dragAccumulator - 28.0) / _bannerWidth;
+                          }
+                        }
+                      } else {
+                        // When open, dragging right closes it
+                        _animCtrl.value -= delta / _bannerWidth;
+                      }
                     },
                     onHorizontalDragEnd: (details) {
-                      if (_animCtrl.value > 0.30 || (details.primaryVelocity ?? 0) < -150) {
+                      final velocity = details.primaryVelocity ?? 0;
+                      if (_animCtrl.value > 0.50 || velocity < -600) {
                         _animCtrl.forward();
                       } else {
                         _close();

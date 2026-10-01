@@ -11,7 +11,6 @@ class TouchpadScreen extends StatefulWidget {
 }
 
 class _TouchpadScreenState extends State<TouchpadScreen> {
-  Offset? _touchPosition;
   bool _showButtons = false;
 
   @override
@@ -22,27 +21,19 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
         Expanded(
           child: Listener(
             onPointerDown: (event) {
-              setState(() {
-                _touchPosition = event.localPosition;
-              });
+              setState(() {});
               widget.engine.onPointerDown(event);
             },
             onPointerMove: (event) {
-              setState(() {
-                _touchPosition = event.localPosition;
-              });
+              setState(() {});
               widget.engine.onPointerMove(event);
             },
             onPointerUp: (event) {
-              setState(() {
-                _touchPosition = null;
-              });
+              setState(() {});
               widget.engine.onPointerUp(event);
             },
             onPointerCancel: (event) {
-              setState(() {
-                _touchPosition = null;
-              });
+              setState(() {});
               widget.engine.onPointerCancel(event);
             },
             child: Container(
@@ -60,35 +51,22 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
                     painter: _TouchpadGridPainter(),
                   ),
 
-                  // Center HUD Label & Gesture Guide
-                  Center(
+                  // Center Subtle Watermark
+                  const Center(
                     child: Opacity(
-                      opacity: 0.25,
+                      opacity: 0.15,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.touch_app_outlined, size: 48, color: Color(0xFF00E5FF)),
-                          const SizedBox(height: 8),
-                          const Text(
-                            "AXIOM PRECISION TOUCHPAD",
+                          Icon(Icons.touch_app_outlined, size: 40, color: Color(0xFF00E5FF)),
+                          SizedBox(height: 6),
+                          Text(
+                            "AXIOM TOUCHPAD",
                             style: TextStyle(
                               color: Color(0xFF00E5FF),
                               letterSpacing: 3.0,
                               fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF141923),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: const Color(0xFF28364F)),
-                            ),
-                            child: const Text(
-                              "1-Finger: Move & Tap  •  2-Fingers: Scroll & Right Click  •  Tap-Hold: Drag",
-                              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+                              fontSize: 12,
                             ),
                           ),
                         ],
@@ -96,29 +74,33 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
                     ),
                   ),
 
-                  // Interactive Glowing Reticle under touch
-                  if (_touchPosition != null)
+                  // Interactive Multi-Touch Glowing Reticles under every active finger
+                  for (final pos in widget.engine.pointerPositions.values)
                     Positioned(
-                      left: _touchPosition!.dx - 25,
-                      top: _touchPosition!.dy - 25,
-                      child: Container(
-                        width: 50,
-                        height: 50,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: const Color(0xFF00E5FF), width: 1.5),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF00E5FF).withValues(alpha: 0.4),
-                              blurRadius: 15.0,
-                              spreadRadius: 2.0,
-                            ),
-                          ],
+                      left: pos.dx - 25,
+                      top: pos.dy - 25,
+                      child: IgnorePointer(
+                        child: Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: const Color(0xFF00E5FF), width: 1.5),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF00E5FF).withValues(alpha: 0.45),
+                                blurRadius: 15.0,
+                                spreadRadius: 2.0,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
 
-                  // Button overlay toggle button
+
+
+                  // Top Right: Button overlay toggle button
                   Positioned(
                     right: 12,
                     top: 12,
@@ -142,7 +124,7 @@ class _TouchpadScreenState extends State<TouchpadScreen> {
           ),
         ),
 
-        // Optional Physical Mouse Buttons UI (Section 8)
+        // Optional Physical Mouse Buttons UI
         if (_showButtons)
           Container(
             height: 64,

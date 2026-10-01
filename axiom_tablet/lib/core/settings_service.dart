@@ -123,6 +123,11 @@ class SettingsService {
     await _prefs?.setDouble('ergo_right_y', rightOffset.dy);
   }
 
+  // --- Touchpad Multi-Touch Gesture Settings ---
+  bool loadThreeFingerTabMode() => _prefs?.getBool('three_finger_tab_mode') ?? false;
+  Future<void> saveThreeFingerTabMode(bool isTabMode) async =>
+      await _prefs?.setBool('three_finger_tab_mode', isTabMode);
+
   // --- Connection / Session Persistence ---
   String? loadSessionToken() => _prefs?.getString('session_token');
   Future<void> saveSessionToken(String token) async => await _prefs?.setString('session_token', token);

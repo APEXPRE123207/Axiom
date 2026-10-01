@@ -18,6 +18,7 @@ class EventType:
     MOUSE_DOWN = "MOUSE_DOWN"
     MOUSE_UP = "MOUSE_UP"
     MOUSE_SCROLL = "MOUSE_SCROLL"
+    GESTURE = "GESTURE"
     
     PING = "PING"
     PONG = "PONG"

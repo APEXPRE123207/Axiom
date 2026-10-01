@@ -9,6 +9,7 @@ class AxiomEventType {
   static const String mouseDown = "MOUSE_DOWN";
   static const String mouseUp = "MOUSE_UP";
   static const String mouseScroll = "MOUSE_SCROLL";
+  static const String gesture = "GESTURE";
   
   static const String ping = "PING";
   static const String pong = "PONG";

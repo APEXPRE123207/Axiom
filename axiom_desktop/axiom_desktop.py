@@ -194,6 +194,11 @@ class AxiomDesktopDaemon:
             dy = float(packet.get("dy", 0.0))
             self.input_injector.mouse_scroll(dx, dy)
 
+        elif event_type == EventType.GESTURE:
+            action = packet.get("action", "")
+            if action:
+                self.input_injector.trigger_gesture(action)
+
     def stop(self):
         print("\n[Axiom Desktop] Shutting down...")
         self.input_injector.release_all_keys()

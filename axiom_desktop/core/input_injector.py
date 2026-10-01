@@ -104,6 +104,13 @@ class WindowsInputInjector:
         self._mouse_sub_pixel_y: float = 0.0
         self._scroll_accum_y: float = 0.0
         self._scroll_accum_x: float = 0.0
+        self._alt_tab_active: bool = False
+
+    def _end_alt_tab(self):
+        """Releases Alt key if Alt-Tab switcher was active."""
+        if self._alt_tab_active:
+            user32.keybd_event(0x12, 0, KEYEVENTF_KEYUP, 0)
+            self._alt_tab_active = False
 
     def key_down(self, key_id: str, custom_vk: Optional[int] = None) -> bool:
         """Injects a key press down event with both Virtual Key and ScanCode."""
@@ -157,6 +164,7 @@ class WindowsInputInjector:
 
     def release_all_keys(self):
         """Emergency release for all currently held keys on disconnect."""
+        self._end_alt_tab()
         keys = list(self._pressed_keys)
         for vk in keys:
             scan_code = user32.MapVirtualKeyW(vk, MAPVK_VK_TO_VSC)
@@ -259,3 +267,103 @@ class WindowsInputInjector:
                     dwExtraInfo=0
                 )
                 user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+
+    def _send_combo(self, modifiers: list, key: str):
+        """Sends a modifier + key combination with proper press duration."""
+        for mod in modifiers:
+            self.key_down(mod)
+        time.sleep(0.02)
+        self.key_down(key)
+        time.sleep(0.02)
+        self.key_up(key)
+        time.sleep(0.01)
+        for mod in reversed(modifiers):
+            self.key_up(mod)
+
+    def _send_sys_combo(self, vks: list):
+        """Sends Windows system combos (Alt+Tab, Win+Tab, etc.) directly via virtual keys."""
+        for vk in vks:
+            user32.keybd_event(vk, 0, 0, 0)
+            time.sleep(0.01)
+        time.sleep(0.03)
+        for vk in reversed(vks):
+            user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
+            time.sleep(0.01)
+
+    def trigger_gesture(self, action: str):
+        """Executes Windows Precision Touchpad gesture actions natively via SendInput and keybd_event."""
+        print(f"[Axiom Input] Executing gesture: {action}")
+        if action in ("APP_NEXT", "APP_RIGHT"):
+            if not self._alt_tab_active:
+                self._alt_tab_active = True
+                user32.keybd_event(0x12, 0, 0, 0)  # Hold Alt down
+                time.sleep(0.02)
+                user32.keybd_event(0x09, 0, 0, 0)  # Tab down
+                time.sleep(0.02)
+                user32.keybd_event(0x09, 0, KEYEVENTF_KEYUP, 0)
+            else:
+                user32.keybd_event(0x27, 0, 0, 0)  # Arrow Right down
+                time.sleep(0.02)
+                user32.keybd_event(0x27, 0, KEYEVENTF_KEYUP, 0)
+        elif action in ("APP_PREV", "APP_LEFT"):
+            if not self._alt_tab_active:
+                self._alt_tab_active = True
+                user32.keybd_event(0x12, 0, 0, 0)  # Hold Alt down
+                time.sleep(0.02)
+                user32.keybd_event(0x10, 0, 0, 0)  # Shift down
+                user32.keybd_event(0x09, 0, 0, 0)  # Tab down
+                time.sleep(0.02)
+                user32.keybd_event(0x09, 0, KEYEVENTF_KEYUP, 0)
+                user32.keybd_event(0x10, 0, KEYEVENTF_KEYUP, 0)
+            else:
+                user32.keybd_event(0x25, 0, 0, 0)  # Arrow Left down
+                time.sleep(0.02)
+                user32.keybd_event(0x25, 0, KEYEVENTF_KEYUP, 0)
+        elif action == "APP_DOWN":
+            if self._alt_tab_active:
+                user32.keybd_event(0x28, 0, 0, 0)  # Arrow Down down
+                time.sleep(0.02)
+                user32.keybd_event(0x28, 0, KEYEVENTF_KEYUP, 0)
+        elif action == "APP_UP":
+            if self._alt_tab_active:
+                user32.keybd_event(0x26, 0, 0, 0)  # Arrow Up down
+                time.sleep(0.02)
+                user32.keybd_event(0x26, 0, KEYEVENTF_KEYUP, 0)
+        elif action == "APP_SWITCH_END":
+            self._end_alt_tab()
+        else:
+            self._end_alt_tab()
+            if action == "TAB_NEXT":
+                self._send_sys_combo([0x11, 0x09])  # Ctrl + Tab
+            elif action == "TAB_PREV":
+                self._send_sys_combo([0x11, 0x10, 0x09])  # Ctrl + Shift + Tab
+            elif action == "TASK_VIEW":
+                self._send_sys_combo([0x5B, 0x09])  # Win + Tab
+            elif action == "SHOW_DESKTOP":
+                self._send_sys_combo([0x5B, 0x44])  # Win + D
+            elif action == "SEARCH":
+                self._send_sys_combo([0x5B, 0x53])  # Win + S
+            elif action == "MIDDLE_CLICK":
+                self.mouse_button(MOUSE_BTN_MIDDLE, True)
+                time.sleep(0.03)
+                self.mouse_button(MOUSE_BTN_MIDDLE, False)
+            elif action == "DESKTOP_NEXT":
+                self._send_sys_combo([0x11, 0x5B, 0x27])  # Ctrl + Win + Arrow Right
+            elif action == "DESKTOP_PREV":
+                self._send_sys_combo([0x11, 0x5B, 0x25])  # Ctrl + Win + Arrow Left
+            elif action == "ACTION_CENTER":
+                self._send_sys_combo([0x5B, 0x41])  # Win + A
+            elif action == "NOTIFICATIONS":
+                self._send_sys_combo([0x5B, 0x4E])  # Win + N
+            elif action == "ZOOM_IN":
+                self.key_down("CTRL")
+                time.sleep(0.02)
+                self.mouse_scroll(0, 120)
+                time.sleep(0.02)
+                self.key_up("CTRL")
+            elif action == "ZOOM_OUT":
+                self.key_down("CTRL")
+                time.sleep(0.02)
+                self.mouse_scroll(0, -120)
+                time.sleep(0.02)
+                self.key_up("CTRL")

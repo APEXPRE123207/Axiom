@@ -72,11 +72,13 @@ class SoundEngine {
 
   void _triggerHaptic() {
     try {
-      _hapticChannel.invokeMethod('vibrate', {'duration': 50, 'amplitude': 255});
+      _hapticChannel.invokeMethod('vibrate', {'duration': 50, 'amplitude': 255}).catchError((_) => null);
     } catch (_) {}
-    HapticFeedback.vibrate();
-    HapticFeedback.lightImpact();
-    HapticFeedback.selectionClick();
+    try {
+      HapticFeedback.vibrate().catchError((_) {});
+      HapticFeedback.lightImpact().catchError((_) {});
+      HapticFeedback.selectionClick().catchError((_) {});
+    } catch (_) {}
   }
 
   void playKeySound() {
@@ -95,13 +97,19 @@ class SoundEngine {
         final player = _players[_playerIndex];
         _playerIndex = (_playerIndex + 1) % _players.length;
         player.play(source, volume: volume).catchError((_) {
-          SystemSound.play(SystemSoundType.click);
+          try {
+            SystemSound.play(SystemSoundType.click);
+          } catch (_) {}
         });
       } catch (_) {
-        SystemSound.play(SystemSoundType.click);
+        try {
+          SystemSound.play(SystemSoundType.click);
+        } catch (_) {}
       }
     } else {
-      SystemSound.play(SystemSoundType.click);
+      try {
+        SystemSound.play(SystemSoundType.click);
+      } catch (_) {}
     }
   }
 

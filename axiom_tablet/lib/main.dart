@@ -398,6 +398,7 @@ class _AxiomHomeScreenState extends State<AxiomHomeScreen>
               onConnectPressed: _openConnectDialog,
               onDisconnectPressed: () => _activeTransport.disconnect(),
               onSettingsPressed: () => SettingsModal.show(context),
+              onScreenshotPressed: () => _touchpadEngine.takeScreenshot(),
             ),
             Expanded(
               child: HidableSideBanners(

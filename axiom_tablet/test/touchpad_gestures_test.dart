@@ -17,6 +17,8 @@ class MockTransport implements ITransport {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('TouchpadEngine 3-finger horizontal swipe activates Alt-Tab, cycles in 2D (left/right/down/up), and commits on lift', () async {
     final transport = MockTransport();
     final engine = TouchpadEngine(transport: transport);
@@ -124,5 +126,75 @@ void main() {
     final gesturePackets = transport.sentPackets.where((p) => p.type == AxiomEventType.gesture).toList();
     expect(gesturePackets.isNotEmpty, isTrue);
     expect(gesturePackets.last.data['action'], equals('DESKTOP_NEXT'));
+  });
+
+  test('TouchpadEngine 4-finger tap and takeScreenshot() trigger PRT_SCR', () {
+    final transport = MockTransport();
+    final engine = TouchpadEngine(transport: transport);
+
+    // 1. Direct method call
+    engine.takeScreenshot();
+    expect(transport.sentPackets.last.data['action'], equals('PRT_SCR'));
+
+    // 2. 4-Finger Tap gesture
+    engine.onPointerDown(const PointerDownEvent(pointer: 1, position: Offset(100, 100)));
+    engine.onPointerDown(const PointerDownEvent(pointer: 2, position: Offset(120, 100)));
+    engine.onPointerDown(const PointerDownEvent(pointer: 3, position: Offset(140, 100)));
+    engine.onPointerDown(const PointerDownEvent(pointer: 4, position: Offset(160, 100)));
+
+    engine.onPointerUp(const PointerUpEvent(pointer: 1, position: Offset(100, 100)));
+    engine.onPointerUp(const PointerUpEvent(pointer: 2, position: Offset(120, 100)));
+    engine.onPointerUp(const PointerUpEvent(pointer: 3, position: Offset(140, 100)));
+    engine.onPointerUp(const PointerUpEvent(pointer: 4, position: Offset(160, 100)));
+
+    final screenshotPackets = transport.sentPackets
+        .where((p) => p.type == AxiomEventType.gesture && p.data['action'] == 'PRT_SCR')
+        .toList();
+    expect(screenshotPackets.length, equals(2));
+  });
+
+  test('TouchpadEngine 2-finger scroll does not trigger accidental zoom when fingers drift apart', () {
+    final transport = MockTransport();
+    final engine = TouchpadEngine(transport: transport);
+
+    // Initial 2-finger touchdown: distance = 40px
+    engine.onPointerDown(const PointerDownEvent(pointer: 1, position: Offset(100, 100)));
+    engine.onPointerDown(const PointerDownEvent(pointer: 2, position: Offset(140, 100)));
+
+    // Scroll down by 80px while fingers naturally drift from 40px to 90px apart (50px span change!)
+    engine.onPointerMove(const PointerMoveEvent(pointer: 1, position: Offset(90, 140), delta: Offset(-10, 40)));
+    engine.onPointerMove(const PointerMoveEvent(pointer: 2, position: Offset(180, 140), delta: Offset(40, 40)));
+    engine.onPointerMove(const PointerMoveEvent(pointer: 1, position: Offset(80, 180), delta: Offset(-10, 40)));
+    engine.onPointerMove(const PointerMoveEvent(pointer: 2, position: Offset(190, 180), delta: Offset(10, 40)));
+
+    // Ensure NO zoom gesture was sent
+    final zoomPackets = transport.sentPackets
+        .where((p) => p.type == AxiomEventType.gesture && (p.data['action'] == 'ZOOM_IN' || p.data['action'] == 'ZOOM_OUT'))
+        .toList();
+    expect(zoomPackets, isEmpty, reason: "Scrolling must never accidentally trigger zoom gestures");
+
+    // Ensure mouseScroll packets WERE sent
+    final scrollPackets = transport.sentPackets
+        .where((p) => p.type == AxiomEventType.mouseScroll)
+        .toList();
+    expect(scrollPackets.isNotEmpty, isTrue);
+  });
+
+  test('TouchpadEngine deliberate stationary pinch triggers ZOOM_IN / ZOOM_OUT', () {
+    final transport = MockTransport();
+    final engine = TouchpadEngine(transport: transport);
+
+    // 1. Touchdown 2 fingers close together (span = 40px)
+    engine.onPointerDown(const PointerDownEvent(pointer: 1, position: Offset(100, 100)));
+    engine.onPointerDown(const PointerDownEvent(pointer: 2, position: Offset(140, 100)));
+
+    // 2. Spread fingers apart while center stays at (120, 100): span grows from 40px to 140px (+100px delta)
+    engine.onPointerMove(const PointerMoveEvent(pointer: 1, position: Offset(50, 100), delta: Offset(-50, 0)));
+    engine.onPointerMove(const PointerMoveEvent(pointer: 2, position: Offset(190, 100), delta: Offset(50, 0)));
+
+    final zoomInPackets = transport.sentPackets
+        .where((p) => p.type == AxiomEventType.gesture && p.data['action'] == 'ZOOM_IN')
+        .toList();
+    expect(zoomInPackets.length, equals(1));
   });
 }

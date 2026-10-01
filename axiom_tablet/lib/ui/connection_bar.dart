@@ -17,6 +17,7 @@ class ConnectionBar extends StatelessWidget {
   final VoidCallback onConnectPressed;
   final VoidCallback onDisconnectPressed;
   final VoidCallback onSettingsPressed;
+  final VoidCallback? onScreenshotPressed;
 
   const ConnectionBar({
     super.key,
@@ -29,6 +30,7 @@ class ConnectionBar extends StatelessWidget {
     required this.onConnectPressed,
     required this.onDisconnectPressed,
     required this.onSettingsPressed,
+    this.onScreenshotPressed,
   });
 
   Color _getStatusColor() {
@@ -78,7 +80,7 @@ class ConnectionBar extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final barWidth = constraints.maxWidth < 980 ? 980.0 : constraints.maxWidth;
+          final barWidth = constraints.maxWidth < 1220 ? 1220.0 : constraints.maxWidth;
           return FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
@@ -211,6 +213,42 @@ class ConnectionBar extends StatelessWidget {
               ],
             ),
           ),
+
+          // Screenshot Quick Button beside Touchpad
+          if (onScreenshotPressed != null) ...[
+            const SizedBox(width: 8),
+            Tooltip(
+              message: "Take Screenshot (Print Screen)",
+              child: InkWell(
+                onTap: onScreenshotPressed,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF141923),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.5)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.camera_alt_outlined, size: 14, color: Color(0xFF00E5FF)),
+                      SizedBox(width: 5),
+                      Text(
+                        "PRT SCR",
+                        style: TextStyle(
+                          color: Color(0xFF00E5FF),
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
 
           const Spacer(),
 

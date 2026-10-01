@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import '../core/protocol/protocol.dart';
 import '../core/settings_service.dart';
 import '../core/transport/itransport.dart';
+import '../audio/sound_engine.dart';
 
 enum TouchpadModeState {
   idle,
@@ -26,6 +28,15 @@ class TouchpadEngine {
   double sensitivity = 1.6;
   double scrollSensitivity = 0.5;
   bool showMouseButtons = false;
+
+  // Trackpad surface bounds for edge gliding
+  Size surfaceSize = Size.zero;
+  void setSurfaceSize(Size size) => surfaceSize = size;
+
+  Timer? _dragReleaseTimer;
+  Timer? _edgeGlideTimer;
+  double _glideDx = 0.0;
+  double _glideDy = 0.0;
 
   // Gesture Preference: True = Browser Tabs (Ctrl+Tab), False = Windows Apps (Alt+Tab)
   bool threeFingerTabMode = false;
@@ -80,11 +91,19 @@ class TouchpadEngine {
 
   void onPointerDown(PointerDownEvent event) {
     final now = DateTime.now().millisecondsSinceEpoch;
-    _pointerPositions[event.pointer] = event.position;
-    _initialDownPositions[event.pointer] = event.position;
+    final pos = event.localPosition;
+    _pointerPositions[event.pointer] = pos;
+    _initialDownPositions[event.pointer] = pos;
     _pointerDownTimes[event.pointer] = now;
 
     activePointerCount.value = _pointerPositions.length;
+
+    // Cancel pending drag release if finger returns during drag lock grace period
+    if (_isDragging) {
+      _dragReleaseTimer?.cancel();
+      _dragReleaseTimer = null;
+      _state = TouchpadModeState.dragging;
+    }
 
     if (_pointerPositions.length == 1 && _maxPointersInSession == 0) {
       _sessionStartTime = now;
@@ -97,16 +116,19 @@ class TouchpadEngine {
 
       // Check for tap-and-hold (drag gesture)
       if (now - _lastTapTime < kDoubleTapMaxIntervalMs &&
-          (event.position - _lastTapPosition).distance < 28.0) {
+          (pos - _lastTapPosition).distance < 28.0) {
         _isDragging = true;
         _state = TouchpadModeState.dragging;
+        SoundEngine.instance.playKeySound();
         _sendMouseButton(AxiomEventType.mouseDown, "LEFT");
-      } else {
+      } else if (!_isDragging) {
         _state = TouchpadModeState.tracking1Finger;
       }
     } else {
       _maxPointersInSession = max(_maxPointersInSession, _pointerPositions.length);
-      _cancelDrag();
+      if (!_isDragging) {
+        _cancelDrag();
+      }
 
       if (_pointerPositions.length == 2) {
         _state = TouchpadModeState.tracking2Finger;
@@ -126,22 +148,32 @@ class TouchpadEngine {
     if (!_pointerPositions.containsKey(event.pointer)) return;
 
     final oldPos = _pointerPositions[event.pointer]!;
-    final currentPos = event.position;
+    final currentPos = event.localPosition;
     final delta = currentPos - oldPos;
     _pointerPositions[event.pointer] = currentPos;
 
     final count = _pointerPositions.length;
     _maxPointersInSession = max(_maxPointersInSession, count);
 
-    // --- 1 FINGER: Cursor Movement ---
-    if (count == 1 && _maxPointersInSession == 1 && !_hasScrolled) {
-      final dx = delta.dx * sensitivity;
-      final dy = delta.dy * sensitivity;
+    // --- 1 FINGER: Cursor Movement (or Dragging) ---
+    if (count == 1 && (_maxPointersInSession == 1 || _isDragging) && !_hasScrolled) {
+      final distance = delta.distance;
+      // Dynamic ballistic curve: slow micro-movements remain 1:1 precise, fast movements accelerate up to 3.2x
+      double accel = 1.0;
+      if (distance > 2.0) {
+        accel = 1.0 + (distance - 2.0) * 0.09;
+        if (accel > 3.2) accel = 3.2;
+      }
+
+      final dx = delta.dx * sensitivity * accel;
+      final dy = delta.dy * sensitivity * accel;
 
       transport.send(AxiomPacket(
         type: AxiomEventType.mouseMove,
         data: {'dx': dx, 'dy': dy},
       ));
+
+      _checkEdgeGlide(currentPos);
       return;
     }
 
@@ -152,14 +184,26 @@ class TouchpadEngine {
       final p2 = _pointerPositions[keys[1]]!;
       final currentSpan = (p1 - p2).distance;
 
+      final init1 = _initialDownPositions[keys[0]] ?? p1;
+      final init2 = _initialDownPositions[keys[1]] ?? p2;
+      final disp1 = p1 - init1;
+      final disp2 = p2 - init2;
+
+      // Check if both fingers are moving together in the same direction (scrolling)
+      final dotProduct = (disp1.dx * disp2.dx) + (disp1.dy * disp2.dy);
+      final bothMoved = disp1.distance > 8.0 && disp2.distance > 8.0;
+      if (bothMoved && dotProduct > 0) {
+        _hasScrolled = true;
+      }
+
       if (_initialPinchDistance == 0.0) {
         _initialPinchDistance = currentSpan;
-      } else {
+      } else if (!_hasScrolled) {
+        // Pinch-to-zoom is only eligible if user is NOT scrolling in parallel
         final spanDelta = currentSpan - _initialPinchDistance;
-        // If fingers are spreading or pinching together significantly
-        if (spanDelta.abs() > 40.0 && !_pinchZoomTriggered) {
+        final isOppositeOrPinch = dotProduct <= 0 || !bothMoved;
+        if (spanDelta.abs() > 40.0 && isOppositeOrPinch && !_pinchZoomTriggered) {
           _pinchZoomTriggered = true;
-          _hasScrolled = true;
           _gestureTriggeredInSession = true;
 
           if (spanDelta > 0) {
@@ -171,12 +215,12 @@ class TouchpadEngine {
         }
       }
 
-      // If not pinching, execute smooth 2-finger scroll
-      _twoFingerTotalMovement += delta.distance;
-      if (_twoFingerTotalMovement > 5.0) {
-        _hasScrolled = true;
+      // If pinch zoom has triggered in this touch session, suppress scrolling
+      if (_pinchZoomTriggered) {
+        return;
       }
 
+      // Execute smooth 2-finger scroll
       final scrollDx = delta.dx * scrollSensitivity;
       final scrollDy = delta.dy * scrollSensitivity;
 
@@ -294,8 +338,9 @@ class TouchpadEngine {
   void onPointerUp(PointerUpEvent event) {
     final now = DateTime.now().millisecondsSinceEpoch;
     final sessionDuration = now - _sessionStartTime;
-    final initialPos = _initialDownPositions[event.pointer] ?? event.position;
-    final displacement = (event.position - initialPos).distance;
+    final pos = event.localPosition;
+    final initialPos = _initialDownPositions[event.pointer] ?? pos;
+    final displacement = (pos - initialPos).distance;
 
     final sessionPointers = _maxPointersInSession;
     final gestureFired = _gestureTriggeredInSession;
@@ -308,11 +353,20 @@ class TouchpadEngine {
     activePointerCount.value = _pointerPositions.length;
 
     if (_isDragging) {
-      _isDragging = false;
-      _sendMouseButton(AxiomEventType.mouseUp, "LEFT");
-      _state = TouchpadModeState.idle;
+      _stopEdgeGlide();
+      // Drag Lock grace period: allows lifting and repositioning finger on the tablet
+      // without prematurely ending the drag/selection
+      _dragReleaseTimer?.cancel();
+      _dragReleaseTimer = Timer(const Duration(milliseconds: 350), () {
+        if (_isDragging && _pointerPositions.isEmpty) {
+          _isDragging = false;
+          _sendMouseButton(AxiomEventType.mouseUp, "LEFT");
+          _state = TouchpadModeState.idle;
+        }
+      });
       return;
     }
+    _stopEdgeGlide();
 
     // --- TAP GESTURES (Only when session is stationary and fast) ---
     if (!hadScrolled && !gestureFired && !_isAltTabActive && displacement <= kTapMaxDisplacement && sessionDuration <= kTapMaxDurationMs) {
@@ -320,7 +374,7 @@ class TouchpadEngine {
         // 1-Finger Tap: Left Click
         _sendClick("LEFT");
         _lastTapTime = now;
-        _lastTapPosition = event.position;
+        _lastTapPosition = pos;
       } else if (sessionPointers == 2 && !_gestureTriggeredInSession && _twoFingerTotalMovement < 8.0) {
         // 2-Finger Tap: Right Click
         _gestureTriggeredInSession = true;
@@ -328,11 +382,13 @@ class TouchpadEngine {
       } else if (sessionPointers == 3 && !_gestureTriggeredInSession) {
         // 3-Finger Tap: Middle Click
         _gestureTriggeredInSession = true;
+        SoundEngine.instance.playKeySound();
         _sendGesture("MIDDLE_CLICK");
       } else if (sessionPointers >= 4 && !_gestureTriggeredInSession) {
-        // 4-Finger Tap: Notification Center (Win + N)
+        // 4-Finger Tap: Screenshot (PRT_SCR)
         _gestureTriggeredInSession = true;
-        _sendGesture("NOTIFICATIONS");
+        SoundEngine.instance.playKeySound();
+        _sendGesture("PRT_SCR");
       }
     }
 
@@ -360,6 +416,7 @@ class TouchpadEngine {
     _pointerDownTimes.remove(event.pointer);
     _initialDownPositions.remove(event.pointer);
     activePointerCount.value = _pointerPositions.length;
+    _stopEdgeGlide();
     _cancelDrag();
 
     if (_pointerPositions.isEmpty) {
@@ -407,6 +464,7 @@ class TouchpadEngine {
   }
 
   void _sendClick(String button) {
+    SoundEngine.instance.playKeySound();
     _sendMouseButton(AxiomEventType.mouseDown, button);
     Future.delayed(const Duration(milliseconds: 30), () {
       _sendMouseButton(AxiomEventType.mouseUp, button);
@@ -421,10 +479,66 @@ class TouchpadEngine {
   }
 
   void _cancelDrag() {
+    _stopEdgeGlide();
+    _dragReleaseTimer?.cancel();
+    _dragReleaseTimer = null;
     if (_isDragging) {
       _isDragging = false;
       _sendMouseButton(AxiomEventType.mouseUp, "LEFT");
     }
+  }
+
+  // Edge Auto-Glide when near trackpad boundary
+  void _checkEdgeGlide(Offset pos) {
+    if (surfaceSize == Size.zero) return;
+    const margin = 32.0;
+    const maxSpeed = 18.0;
+
+    double glideDx = 0.0;
+    double glideDy = 0.0;
+
+    if (pos.dx < margin) {
+      glideDx = -maxSpeed * ((margin - pos.dx) / margin).clamp(0.2, 1.0);
+    } else if (pos.dx > surfaceSize.width - margin) {
+      glideDx = maxSpeed * ((pos.dx - (surfaceSize.width - margin)) / margin).clamp(0.2, 1.0);
+    }
+
+    if (pos.dy < margin) {
+      glideDy = -maxSpeed * ((margin - pos.dy) / margin).clamp(0.2, 1.0);
+    } else if (pos.dy > surfaceSize.height - margin) {
+      glideDy = maxSpeed * ((pos.dy - (surfaceSize.height - margin)) / margin).clamp(0.2, 1.0);
+    }
+
+    if (glideDx != 0.0 || glideDy != 0.0) {
+      _startEdgeGlide(glideDx, glideDy);
+    } else {
+      _stopEdgeGlide();
+    }
+  }
+
+  void _startEdgeGlide(double dx, double dy) {
+    _glideDx = dx;
+    _glideDy = dy;
+    if (_edgeGlideTimer != null && _edgeGlideTimer!.isActive) return;
+
+    _edgeGlideTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+      transport.send(AxiomPacket(
+        type: AxiomEventType.mouseMove,
+        data: {'dx': _glideDx * sensitivity, 'dy': _glideDy * sensitivity},
+      ));
+    });
+  }
+
+  void _stopEdgeGlide() {
+    _edgeGlideTimer?.cancel();
+    _edgeGlideTimer = null;
+    _glideDx = 0.0;
+    _glideDy = 0.0;
+  }
+
+  void dispose() {
+    _stopEdgeGlide();
+    _dragReleaseTimer?.cancel();
   }
 
   // Toggle 3-finger swipe mode (Browser Tabs vs Windows Apps)
@@ -433,9 +547,58 @@ class TouchpadEngine {
     SettingsService.instance.saveThreeFingerTabMode(isTabMode);
   }
 
+  // Screenshot trigger
+  void takeScreenshot() {
+    SoundEngine.instance.playKeySound();
+    _sendGesture("PRT_SCR");
+  }
+
+  // Send Escape key to cancel screenshots / exit dialogs cleanly
+  void sendEscape() {
+    SoundEngine.instance.playKeySound();
+
+    // 1. Immediately press ESCAPE down in Windows.
+    // In Windows (e.g. Snipping Tool / Snip & Sketch), pressing ESCAPE while mouse is down
+    // aborts the active selection rectangle cleanly WITHOUT taking a screenshot.
+    transport.send(AxiomPacket(
+      type: AxiomEventType.keyDown,
+      data: {'key': 'ESCAPE'},
+    ));
+
+    // 2. Stop edge glide and drag timer immediately
+    _stopEdgeGlide();
+    _dragReleaseTimer?.cancel();
+    _dragReleaseTimer = null;
+    final wasDragging = _isDragging;
+    _isDragging = false;
+
+    // 3. Clear pointer tracking and mark gesture triggered so lifting fingers cannot fire a click
+    _pointerPositions.clear();
+    _initialDownPositions.clear();
+    _pointerDownTimes.clear();
+    _gestureTriggeredInSession = true;
+
+    // 4. Release mouse and ESCAPE with safe sequencing
+    Future.delayed(const Duration(milliseconds: 40), () {
+      if (wasDragging) {
+        _sendMouseButton(AxiomEventType.mouseUp, "LEFT");
+      }
+      transport.send(AxiomPacket(
+        type: AxiomEventType.keyUp,
+        data: {'key': 'ESCAPE'},
+      ));
+    });
+  }
+
   // External click handlers (for optional on-screen buttons)
-  void leftMouseDown() => _sendMouseButton(AxiomEventType.mouseDown, "LEFT");
+  void leftMouseDown() {
+    SoundEngine.instance.playKeySound();
+    _sendMouseButton(AxiomEventType.mouseDown, "LEFT");
+  }
   void leftMouseUp() => _sendMouseButton(AxiomEventType.mouseUp, "LEFT");
-  void rightMouseDown() => _sendMouseButton(AxiomEventType.mouseDown, "RIGHT");
+  void rightMouseDown() {
+    SoundEngine.instance.playKeySound();
+    _sendMouseButton(AxiomEventType.mouseDown, "RIGHT");
+  }
   void rightMouseUp() => _sendMouseButton(AxiomEventType.mouseUp, "RIGHT");
 }

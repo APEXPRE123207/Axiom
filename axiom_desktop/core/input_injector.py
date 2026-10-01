@@ -87,6 +87,7 @@ user32.MapVirtualKeyW.restype = wintypes.UINT
 # Extended keys set for KEYEVENTF_EXTENDEDKEY flag
 EXTENDED_KEYS = {
     0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28,  # PageUp, PageDown, End, Home, Arrows
+    0x2C,                                            # PrintScreen (VK_SNAPSHOT)
     0x2D, 0x2E,                                      # Insert, Delete
     0x5B, 0x5C,                                      # Windows keys
     0xA3, 0xA5,                                      # RCtrl, RAlt
@@ -135,6 +136,10 @@ class WindowsInputInjector:
 
         self._pressed_keys.add(vk)
         res = user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+        if res == 0:
+            # Fallback to keybd_event if SendInput is blocked by UIPI
+            user32.keybd_event(vk, scan_code, flags, 0)
+            return True
         return res == 1
 
     def key_up(self, key_id: str, custom_vk: Optional[int] = None) -> bool:
@@ -160,6 +165,9 @@ class WindowsInputInjector:
 
         self._pressed_keys.discard(vk)
         res = user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+        if res == 0:
+            user32.keybd_event(vk, scan_code, flags, 0)
+            return True
         return res == 1
 
     def release_all_keys(self):
@@ -175,7 +183,9 @@ class WindowsInputInjector:
             inp = INPUT()
             inp.type = INPUT_KEYBOARD
             inp.union.ki = KEYBDINPUT(wVk=vk, wScan=scan_code, dwFlags=flags, time=0, dwExtraInfo=0)
-            user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+            res = user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+            if res == 0:
+                user32.keybd_event(vk, scan_code, flags, 0)
         self._pressed_keys.clear()
 
     def mouse_move(self, dx: float, dy: float):
@@ -283,11 +293,13 @@ class WindowsInputInjector:
     def _send_sys_combo(self, vks: list):
         """Sends Windows system combos (Alt+Tab, Win+Tab, etc.) directly via virtual keys."""
         for vk in vks:
-            user32.keybd_event(vk, 0, 0, 0)
+            flags = KEYEVENTF_EXTENDEDKEY if vk in EXTENDED_KEYS else 0
+            user32.keybd_event(vk, 0, flags, 0)
             time.sleep(0.01)
         time.sleep(0.03)
         for vk in reversed(vks):
-            user32.keybd_event(vk, 0, KEYEVENTF_KEYUP, 0)
+            flags = (KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP) if vk in EXTENDED_KEYS else KEYEVENTF_KEYUP
+            user32.keybd_event(vk, 0, flags, 0)
             time.sleep(0.01)
 
     def trigger_gesture(self, action: str):
@@ -355,6 +367,11 @@ class WindowsInputInjector:
                 self._send_sys_combo([0x5B, 0x41])  # Win + A
             elif action == "NOTIFICATIONS":
                 self._send_sys_combo([0x5B, 0x4E])  # Win + N
+            elif action in ("SCREENSHOT", "PRT_SCR", "PRINT_SCREEN"):
+                # Windows Print Screen (VK_SNAPSHOT = 0x2C)
+                user32.keybd_event(0x2C, 0, 0, 0)
+                time.sleep(0.03)
+                user32.keybd_event(0x2C, 0, KEYEVENTF_KEYUP, 0)
             elif action == "ZOOM_IN":
                 self.key_down("CTRL")
                 time.sleep(0.02)

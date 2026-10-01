@@ -57,6 +57,7 @@ VK_MAP = {
     "INSERT": 0x2D, "DELETE": 0x2E, "HOME": 0x24, "END": 0x23,
     "PAGE_UP": 0x21, "PAGE_DOWN": 0x22,
     "ARROW_UP": 0x26, "ARROW_DOWN": 0x28, "ARROW_LEFT": 0x25, "ARROW_RIGHT": 0x27,
+    "PRT_SCR": 0x2C, "PRINT_SCREEN": 0x2C, "SNAPSHOT": 0x2C,
     
     # Punctuation & Symbols
     "MINUS": 0xBD, "EQUALS": 0xBB, "BRACKET_LEFT": 0xDB, "BRACKET_RIGHT": 0xDD,
